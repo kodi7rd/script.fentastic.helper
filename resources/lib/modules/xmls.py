@@ -68,6 +68,21 @@ main_menu_tvshows_xml = '\
 \n    </include>\
 \n</includes>'
 
+main_menu_idanplus_xml = '\
+<?xml version="1.0" encoding="UTF-8"?>\
+\n<includes>\
+\n    <include name="IdanPlusMainMenu">\
+\n        <item>\
+\n            <label>{cpath_header}</label>\
+\n            <onclick>ActivateWindow(Videos,{main_menu_path},return)</onclick>\
+\n            <property name="menu_id">$NUMBER[25000]</property>\
+\n            <thumb>icons/sidemenu/livetv.png</thumb>\
+\n            <property name="id">idanplus</property>\
+\n            <visible>!Skin.HasSetting(HomeMenuNoIdanPlusButton)</visible>\
+\n        </item>\
+\n    </include>\
+\n</includes>'
+
 search_history_xml = '\
 <?xml version="1.0" encoding="UTF-8"?>\
 \n<includes>\
