@@ -575,7 +575,7 @@ class CPaths:
 def files_get_directory(directory, properties=["title", "file", "thumbnail"]):
     command = {
         "jsonrpc": "2.0",
-        "id": "plugin.video.fen",
+        "id": "plugin.video.twilight",
         "method": "Files.GetDirectory",
         "params": {"directory": directory, "media": "files", "properties": properties},
     }
