@@ -18,32 +18,27 @@ settings_path = xbmcvfs.translatePath(
 database_path = xbmcvfs.translatePath(
     "special://profile/addon_data/script.fentastic.helper/cpath_cache.db"
 )
-movies_widgets_xml, tvshows_widgets_xml, idanplus_widgets_xml = (
+movies_widgets_xml, tvshows_widgets_xml = (
     "script-fentastic-widget_movies",
     "script-fentastic-widget_tvshows",
-    "script-fentastic-widget_idanplus",
 )
-movies_main_menu_xml, tvshows_main_menu_xml, idanplus_main_menu_xml = (
+movies_main_menu_xml, tvshows_main_menu_xml = (
     "script-fentastic-main_menu_movies",
     "script-fentastic-main_menu_tvshows",
-    "script-fentastic-main_menu_idanplus",
 )
 default_xmls = {
     "movie.widget": (movies_widgets_xml, xmls.default_widget, "MovieWidgets"),
     "tvshow.widget": (tvshows_widgets_xml, xmls.default_widget, "TVShowWidgets"),
-    "idanplus.widget": (idanplus_widgets_xml, xmls.default_widget, "IdanPlusWidgets"),
     "movie.main_menu": (movies_main_menu_xml, xmls.default_main_menu, "MoviesMainMenu"),
     "tvshow.main_menu": (
         tvshows_main_menu_xml,
         xmls.default_main_menu,
         "TVShowsMainMenu",
     ),
-    "idanplus.main_menu": (idanplus_main_menu_xml, xmls.default_main_menu, "IdanPlusMainMenu")
 }
 main_include_dict = {
     "movie": {"main_menu": None, "widget": "MovieWidgets"},
     "tvshow": {"main_menu": None, "widget": "TVShowWidgets"},
-    "idanplus": {"main_menu": None, "widget": "IdanPlusWidgets"},
 }
 widget_types = (
     ("Poster", "WidgetListPoster"),
@@ -194,17 +189,11 @@ class CPaths:
                 xmls.main_menu_movies_xml,
                 "movie.main_menu",
             )
-        elif self.media_type == "tvshow":
+        else:
             menu_xml_file, main_menu_xml, key = (
                 tvshows_main_menu_xml,
                 xmls.main_menu_tvshows_xml,
                 "tvshow.main_menu",
-            )
-        elif self.media_type == "idanplus":
-            menu_xml_file, main_menu_xml, key = (
-                idanplus_main_menu_xml,
-                xmls.main_menu_idanplus_xml,
-                "idanplus.main_menu",
             )
         xml_file = "special://skin/xml/%s.xml" % (menu_xml_file)
         final_format = main_menu_xml.format(
@@ -222,10 +211,9 @@ class CPaths:
         if not active_cpaths:
             self.make_default_xml()
         xml_file = "special://skin/xml/%s.xml" % (
-            movies_widgets_xml if self.media_type == "movie" else (
-                tvshows_widgets_xml if self.media_type == "tvshow" else idanplus_widgets_xml)
+            movies_widgets_xml if self.media_type == "movie" else tvshows_widgets_xml
         )
-        list_id = 19010 if self.media_type == "movie" else 22010 if self.media_type == "tvshow" else 25010
+        list_id = 19010 if self.media_type == "movie" else 22010
         final_format = xmls.media_xml_start.format(main_include=self.main_include)
         for k, v in active_cpaths.items():
             cpath_list_id = list_id + k
@@ -343,13 +331,10 @@ class CPaths:
     def update_skin_strings(self):
         movie_cpath = self.fetch_one_cpath("movie.main_menu")
         tvshow_cpath = self.fetch_one_cpath("tvshow.main_menu")
-        idanplus_cpath = self.fetch_one_cpath("idanplus.main_menu")
         movie_cpath_header = movie_cpath.get("cpath_header") if movie_cpath else None
         tvshow_cpath_header = tvshow_cpath.get("cpath_header") if tvshow_cpath else None
-        idanplus_cpath_header = idanplus_cpath.get("cpath_header") if idanplus_cpath else None
         default_movie_string_id = 342
         default_tvshow_string_id = 20343
-        default_idanplus_string_id = 700026 # Added in skin.fentastic\language\resource.language.he_il AND resource.language.en_gb
         default_movie_value = (
             xbmc.getLocalizedString(default_movie_string_id)
             if not movie_cpath_header
@@ -360,14 +345,8 @@ class CPaths:
             if not tvshow_cpath_header
             else tvshow_cpath_header
         )
-        default_idanplus_value = (
-            xbmc.getLocalizedString(default_idanplus_string_id)
-            if not idanplus_cpath_header
-            else idanplus_cpath_header
-        )
         xbmc.executebuiltin("Skin.SetString(MenuMovieLabel,%s)" % default_movie_value)
         xbmc.executebuiltin("Skin.SetString(MenuTVShowLabel,%s)" % default_tvshow_value)
-        xbmc.executebuiltin("Skin.SetString(MenuIdanPlusLabel,%s)" % default_idanplus_value)
 
     def manage_action(self, cpath_setting, context="widget"):
         choices = [
@@ -458,8 +437,6 @@ class CPaths:
                         cpath_header = xbmc.getLocalizedString(342)
                     elif cpath_setting == "tvshow.main_menu":
                         cpath_header = xbmc.getLocalizedString(20343)
-                    elif cpath_setting == "idanplus.main_menu":
-                        cpath_header = xbmc.getLocalizedString(700026)
                     else:
                         cpath_header = "Default Main Menu Header"
                 self.update_cpath_in_database(
@@ -600,9 +577,9 @@ def get_jsonrpc(request):
 
 
 def remake_all_cpaths(silent=False):
-    for item in ("movie.widget", "tvshow.widget", "idanplus.widget"):
+    for item in ("movie.widget", "tvshow.widget"):
         CPaths(item).remake_widgets()
-    for item in ("movie.main_menu", "tvshow.main_menu", "idanplus.main_menu"):
+    for item in ("movie.main_menu", "tvshow.main_menu"):
         CPaths(item).remake_main_menus()
     if not silent:
         xbmcgui.Dialog().ok("FENtastic", "Menus and widgets remade")
@@ -611,13 +588,13 @@ def remake_all_cpaths(silent=False):
 def starting_widgets():
     window = xbmcgui.Window(10000)
     window.setProperty("fentastic.starting_widgets", "finished")
-    for item in ("movie.widget", "tvshow.widget", "idanplus.widget"):
+    for item in ("movie.widget", "tvshow.widget"):
         try:
             active_cpaths = CPaths(item).fetch_current_cpaths()
             if not active_cpaths:
                 continue
             widget_type = item.split(".")[0]
-            base_list_id = 19010 if widget_type == "movie" else 22010 if widget_type == "tvshow" else 25010
+            base_list_id = 19010 if widget_type == "movie" else 22010
             for count in range(1, 11):
                 active_widget = active_cpaths.get(count, {})
                 if not active_widget:
