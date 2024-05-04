@@ -103,7 +103,8 @@ class SPaths:
             final_format += body
         final_format += xmls.media_xml_end
         self.write_xml(xml_file, final_format)
-        xbmc.executebuiltin("ReloadSkin()")
+        # KODI-RD-IL
+        # xbmc.executebuiltin("ReloadSkin()")
         if event is not None:
             event.set()
 
