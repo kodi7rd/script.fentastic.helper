@@ -1,5 +1,6 @@
-import xbmc, xbmcgui
-from threading import Thread
+import xbmc
+import xbmcgui
+from threading import Thread, Lock
 from modules.MDbList import MDbListAPI
 import json
 
@@ -14,10 +15,10 @@ empty_ratings = {
     "tmdbRating": "",
 }
 
-
 class RatingsService(xbmc.Monitor):
     def __init__(self):
-        xbmc.Monitor.__init__(self)
+        """Initializes the RatingsService and its properties."""
+        super().__init__()
         self.mdblist_api = MDbListAPI
         self.last_set_imdb_id = None
         self.window = xbmcgui.Window
@@ -26,6 +27,7 @@ class RatingsService(xbmc.Monitor):
         self.get_visibility = xbmc.getCondVisibility
 
     def onNotification(self, sender, method, data):
+        """Handles notifications from the Kodi system."""
         if sender == "xbmc":
             if method in ("GUI.OnScreensaverActivated", "System.OnSleep"):
                 self.window(self.get_window_id()).setProperty("pause_services", "true")
@@ -35,6 +37,7 @@ class RatingsService(xbmc.Monitor):
                 logger("###FENtastic: Device is Awake, RESUMING Ratings Service", 1)
 
     def listitem_monitor(self):
+        """Monitors the currently selected list item for updates to ratings."""
         while not self.abortRequested():
             if (
                 self.window(self.get_window_id()).getProperty("pause_services")
@@ -42,9 +45,11 @@ class RatingsService(xbmc.Monitor):
             ):
                 self.waitForAbort(2)
                 continue
+
             if xbmc.getSkinDir() != "skin.fentastic":
                 self.waitForAbort(15)
                 continue
+
             api_key = self.get_infolabel("Skin.String(mdblist_api_key)")
 
             # KODI-RD-IL
@@ -68,14 +73,17 @@ class RatingsService(xbmc.Monitor):
             if not api_key:
                 self.waitForAbort(10)
                 continue
+
             if not self.get_visibility(
                 "Window.IsVisible(videos) | Window.IsVisible(home) | Window.IsVisible(11121)"
             ):
                 self.waitForAbort(2)
                 continue
+
             if self.get_visibility("Container.Scrolling"):
                 self.waitForAbort(0.2)
                 continue
+
             if self.get_visibility("Skin.HasSetting(TrailerPlaying)"):
                 self.waitForAbort(3)
                 while xbmc.Player().isPlaying():
@@ -84,6 +92,7 @@ class RatingsService(xbmc.Monitor):
                 xbmc.executebuiltin("Skin.ToggleSetting(TrailerPlaying)")
                 self.waitForAbort(0.2)
                 continue
+
             imdb_id = self.get_infolabel("ListItem.IMDBNumber")
             set_property = self.window(self.get_window_id()).setProperty
             get_property = self.window(self.get_window_id()).getProperty
@@ -94,9 +103,11 @@ class RatingsService(xbmc.Monitor):
                 self.last_set_imdb_id = None
                 self.waitForAbort(0.2)
                 continue
+
             if imdb_id == self.last_set_imdb_id:
                 self.waitForAbort(0.2)
                 continue
+
             if cached_ratings:
                 result = json.loads(cached_ratings)
                 for k, v in result.items():
@@ -108,8 +119,10 @@ class RatingsService(xbmc.Monitor):
             self.waitForAbort(0.2)
 
     def set_ratings(self, api_key, imdb_id):
+        """Fetches ratings from the MDbList API and updates the Kodi properties."""
         set_property = self.window(self.get_window_id()).setProperty
         result = self.mdblist_api().fetch_info({"imdb_id": imdb_id}, api_key)
+
         if result:
             set_property(f"fentastic.cachedRatings.{imdb_id}", json.dumps(result))
             for k, v in result.items():

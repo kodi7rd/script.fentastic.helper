@@ -5,69 +5,87 @@ from xml.dom import minidom
 KEYMAP_LOCATION = "special://userdata/keymaps/"
 POSSIBLE_KEYMAP_NAMES = ["gen.xml", "keyboard.xml", "keymap.xml"]
 
-
 def set_image():
+    """
+    Prompts the user to select a custom background image and sets it in the skin.
+    """
     image_file = xbmcgui.Dialog().browse(
         2, "Choose Custom Background Image", "network", ".jpg|.png|.bmp", False, False
     )
     if image_file:
-        xbmc.executebuiltin("Skin.SetString(CustomBackground,%s)" % image_file)
-
+        xbmc.executebuiltin(f"Skin.SetString(CustomBackground,{image_file})")
 
 def fix_black_screen():
+    """
+    Toggles the 'TrailerPlaying' setting in the skin to fix the black screen issue.
+    """
     if xbmc.getCondVisibility("Skin.HasSetting(TrailerPlaying)"):
         xbmc.executebuiltin("Skin.ToggleSetting(TrailerPlaying)")
 
+def make_backup(keymap_path: str):
+    """
+    Creates a backup of the specified keymap file.
 
-# def get_current_keymap_path():
-#     for keymap_name in POSSIBLE_KEYMAP_NAMES:
-#         keymap_path = xbmcvfs.translatePath(KEYMAP_LOCATION + keymap_name)
-#         if xbmcvfs.exists(keymap_path):
-#             return keymap_path
-#     return None
-
-
-def make_backup(keymap_path):
+    Args:
+        keymap_path (str): The path of the keymap file to back up.
+    """
     backup_path = f"{keymap_path}.backup"
     if not xbmcvfs.exists(backup_path):
         xbmcvfs.copy(keymap_path, backup_path)
 
+def restore_from_backup(keymap_path: str):
+    """
+    Restores the keymap file from its backup if it exists.
 
-def restore_from_backup(keymap_path):
+    Args:
+        keymap_path (str): The path of the keymap file to restore.
+    """
     backup_path = f"{keymap_path}.backup"
     if xbmcvfs.exists(backup_path):
         xbmcvfs.delete(keymap_path)
         xbmcvfs.rename(backup_path, keymap_path)
 
+def get_all_existing_keymap_paths() -> list:
+    """
+    Retrieves all existing keymap file paths.
 
-def get_all_existing_keymap_paths():
-    existing_paths = []
-    for name in POSSIBLE_KEYMAP_NAMES:
-        path = xbmcvfs.translatePath(f"special://profile/keymaps/{name}")
-        if xbmcvfs.exists(path):
-            existing_paths.append(path)
+    Returns:
+        list: A list of existing keymap file paths.
+    """
+    # existing_paths = []
+    # for name in POSSIBLE_KEYMAP_NAMES:
+    #     path = xbmcvfs.translatePath(f"special://profile/keymaps/{name}")
+    #     if xbmcvfs.exists(path):
+    #         existing_paths.append(path)
+    existing_paths = [
+        path
+        for name in POSSIBLE_KEYMAP_NAMES
+        if (path := xbmcvfs.translatePath(f"special://profile/keymaps/{name}")) and xbmcvfs.exists(path)
+    ]
     return existing_paths
 
 
-def create_new_keymap_file():
+def create_new_keymap_file() -> str:
+    """
+    Creates a new keymap file with a default keymap structure.
+
+    Returns:
+        str: The path of the newly created keymap file.
+    """
     default_keymap_name = "gen.xml"
     new_keymap_path = xbmcvfs.translatePath(f"{KEYMAP_LOCATION}{default_keymap_name}")
     root = ET.Element("keymap")
-    tree = ET.ElementTree(root)
-    tree.write(new_keymap_path)
+    ET.ElementTree(root).write(new_keymap_path)
     return new_keymap_path
 
-
-# def get_parent_map(tree):
-#     return {c: p for p in tree.iter() for c in p}
-
-
 def modify_keymap():
-    keymap_paths = get_all_existing_keymap_paths()
-    if not keymap_paths:
-        new_keymap_path = create_new_keymap_file()
-        keymap_paths = [new_keymap_path]
+    """
+    Modifies existing keymap files based on the setting for enabling One Click Trailers.
+    If no keymap files exist, a new keymap file is created.
+    """
+    keymap_paths = get_all_existing_keymap_paths() or [create_new_keymap_file()]
     setting_value = xbmc.getCondVisibility("Skin.HasSetting(Enable.OneClickTrailers)")
+
     for keymap_path in keymap_paths:
         if not setting_value:
             restore_from_backup(keymap_path)
@@ -81,45 +99,35 @@ def modify_keymap():
 
         play_pause_tags = root.findall(".//play_pause[@mod='longpress']")
         t_key_tags = root.findall(".//t")
-        global_tag = root.find("global")
-        if global_tag is None:
-            global_tag = ET.SubElement(root, "global")
-        keyboard_tag = global_tag.find("keyboard")
-        if keyboard_tag is None:
-            keyboard_tag = ET.SubElement(global_tag, "keyboard")
+        global_tag = root.find("global") or ET.SubElement(root, "global")
+        keyboard_tag = global_tag.find("keyboard") or ET.SubElement(global_tag, "keyboard")
+
         if setting_value:
             if t_key_tags:
-                t_key_tags[
-                    0
-                ].text = "RunScript(script.fentastic.helper, mode=play_trailer)"
+                t_key_tags[0].text = "RunScript(script.fentastic.helper, mode=play_trailer)"
                 for tag in t_key_tags[1:]:
                     keyboard_tag.remove(tag)
             else:
-                t_key_tag = ET.SubElement(keyboard_tag, "t")
-                t_key_tag.text = "RunScript(script.fentastic.helper, mode=play_trailer)"
+                ET.SubElement(keyboard_tag, "t").text = "RunScript(script.fentastic.helper, mode=play_trailer)"
+
             if play_pause_tags:
-                play_pause_tags[
-                    0
-                ].text = "RunScript(script.fentastic.helper, mode=play_trailer)"
+                play_pause_tags[0].text = "RunScript(script.fentastic.helper, mode=play_trailer)"
                 for tag in play_pause_tags[1:]:
                     keyboard_tag.remove(tag)
             else:
-                play_pause_tag = ET.SubElement(
-                    keyboard_tag, "play_pause", mod="longpress"
-                )
-                play_pause_tag.text = (
+                ET.SubElement(keyboard_tag, "play_pause", mod="longpress").text =\
                     "RunScript(script.fentastic.helper, mode=play_trailer)"
-                )
         else:
             for tag_list in [play_pause_tags, t_key_tags]:
                 for tag in tag_list:
                     if has_play_trailer_tag(tag):
                         keyboard_tag.remove(tag)
+
         xml_string = ET.tostring(root, encoding="utf-8").decode("utf-8")
         pretty_xml = minidom.parseString(xml_string).toprettyxml(indent="  ")
-        pretty_xml = "\n".join(
-            [line for line in pretty_xml.split("\n") if line.strip()]
-        )
+        pretty_xml = "\n".join(line for line in pretty_xml.split("\n") if line.strip())
+
         with xbmcvfs.File(keymap_path, "w") as xml_file:
             xml_file.write(pretty_xml)
+
     xbmc.executebuiltin("Action(reloadkeymaps)")
