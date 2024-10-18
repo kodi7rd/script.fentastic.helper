@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import xbmc, xbmcgui, xbmcvfs
 import json
 import sqlite3 as database
@@ -76,15 +75,16 @@ main_include_dict = {
     "custom2": {"main_menu": None, "widget": "Custom2Widgets"},
     "custom3": {"main_menu": None, "widget": "Custom3Widgets"},
 }
-widget_types = (
-    ("Poster", "WidgetListPoster"),
-    ("BigPoster", "WidgetListBigPoster"),
-    ("Landscape", "WidgetListLandscape"),
-    ("BigLandscape", "WidgetListBigLandscape"),
-    ("LandscapeInfo", "WidgetListEpisodes"),
-    ("BigLandscapeInfo", "WidgetListBigEpisodes"),
-    ("Category", "WidgetListCategory"),
-)
+
+widget_types = {
+    "Poster": "WidgetListPoster",
+    "BigPoster": "WidgetListBigPoster",
+    "Landscape": "WidgetListLandscape",
+    "BigLandscape": "WidgetListBigLandscape",
+    "LandscapeInfo": "WidgetListEpisodes",
+    "BigLandscapeInfo": "WidgetListBigEpisodes",
+    "Category": "WidgetListCategory",
+}
 default_path = "addons://sources/video"
 
 
@@ -210,16 +210,11 @@ class CPaths:
             list_items.append(listitem)
 
         for i in results:
-            stripped_label = i["label"]
-            stripped_label = stripped_label.replace("[B]", "").replace("[/B]", "")
-            while "[COLOR" in stripped_label:
-                start = stripped_label.find("[COLOR")
-                end = stripped_label.find("]", start) + 1
-                stripped_label = stripped_label[:start] + stripped_label[end:]
-            stripped_label = stripped_label.replace("[/COLOR]", "")
-            listitem = Listitem(
-                "%s »" % stripped_label, "Browse path...", offscreen=True
-            )
+            # Use regex to remove [B] and [COLOR] tags in a single pass
+            stripped_label = re.sub(r'\[B\]|\[\/B\]|\[COLOR.*?\]|\[\/COLOR\]', '', i["label"])
+
+            # Create a Listitem for the current result
+            listitem = Listitem(f"{stripped_label} »", "Browse path...", offscreen=True)
             listitem.setArt({"icon": i["thumbnail"]})
             listitem.setProperty("item",
                                  json.dumps({"label": i["label"], "file": i["file"], "thumbnail": i["thumbnail"]}))
@@ -407,7 +402,7 @@ class CPaths:
         return header or None
 
     def get_widget_type(self, cpath_type):
-        for widget_type, widget_list_type in widget_types:
+        for widget_type, widget_list_type in widget_types.items():
             if widget_list_type == cpath_type:
                 return widget_type
             elif "Stacked" in cpath_type and widget_list_type in cpath_type:
@@ -415,10 +410,11 @@ class CPaths:
         return None
 
     def widget_type(self, label="Choose widget display type", type_limit=7):
-        choice = dialog.select(label, [i[0] for i in widget_types[0:type_limit]])
+        keys = list(widget_types.keys())[0:type_limit]
+        choice = dialog.select(label, keys)
         if choice == -1:
             return None
-        return widget_types[choice]
+        return keys[choice]
 
     def update_skin_strings(self):
         movie_cpath = self.fetch_one_cpath("movie.main_menu")
