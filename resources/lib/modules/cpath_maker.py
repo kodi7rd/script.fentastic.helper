@@ -478,103 +478,131 @@ class CPaths:
         action = choices[choice][1]
 
         if action in ["move_up", "move_down"]:
-            parts = cpath_setting.split(".")
-            current_order = int(parts[-1])
-            if len(parts) < 3 or not parts[-1].isdigit():
-                dialog.ok("FENtastic", "Cannot move this widget")
-                return None
-            if current_order == 1 and action == "move_up":
-                new_order = max_widgets
-            elif current_order == max_widgets and action == "move_down":
-                new_order = 1
-            else:
-                new_order = (
-                    current_order - 1 if action == "move_up" else current_order + 1
-                )
-            self.swap_widgets(parts, current_order, new_order)
+            self.handle_widget_movement(cpath_setting, action)
         elif action == "remake_path":
-            self.remove_cpath_from_database(cpath_setting)
-            result = self.path_browser()
-            if result:
-                cpath_path = result.get("file", None)
-                if context == "widget":
-                    self.handle_widget_remake(result, cpath_setting)
-                elif context == "main_menu":
-                    default_header = result.get("label", None)
-                    cpath_header = self.main_menu_header(default_header)
-                    if not cpath_header:
-                        return None
-                    self.add_cpath_to_database(
-                        cpath_setting, cpath_path, cpath_header, "", ""
-                    )
-                    self.make_main_menu_xml(self.fetch_current_cpaths())
-                    dialog.ok("FENtastic", "Main menu remade")
+            self.handle_remake_path(cpath_setting, context)
         elif action == "rename_path":
-            result = self.fetch_one_cpath(cpath_setting)
-            if not result:
-                return None
-            cpath_path = result.get("cpath_path", None)
-            cpath_type = result.get("cpath_type", None)
-            cpath_label = result.get("cpath_label", None)
-            if not cpath_path:
-                return None
-            default_header = result.get("cpath_header", None)
+            self.handle_rename_path(cpath_setting, context)
+        elif action == "display_type":
+            self.handle_display_type(cpath_setting)
+        elif action == "clear_path":
+            self.handle_clear_path(cpath_setting, context)
+
+        return None
+
+    def handle_widget_movement(self, cpath_setting, action):
+        """Handles moving widgets up or down in the custom path settings."""
+        parts = cpath_setting.split(".")
+        current_order = int(parts[-1])
+        if len(parts) < 3 or not parts[-1].isdigit():
+            dialog.ok("FENtastic", "Cannot move this widget")
+            return None
+        if current_order == 1 and action == "move_up":
+            new_order = max_widgets
+        elif current_order == max_widgets and action == "move_down":
+            new_order = 1
+        else:
+            new_order = current_order - 1 if action == "move_up" else current_order + 1
+        self.swap_widgets(parts, current_order, new_order)
+
+
+    def handle_remake_path(self, cpath_setting, context):
+        """Handles the process of remaking a custom path."""
+        """Updates the main menu with a new path based on the provided result."""
+        self.remove_cpath_from_database(cpath_setting)
+        result = self.path_browser()
+        if result:
+            cpath_path = result.get("file", None)
             if context == "widget":
-                cpath_header = self.widget_header(default_header)
+                self.handle_widget_remake(result, cpath_setting)
+            elif context == "main_menu":
+                default_header = result.get("label", None)
+                cpath_header = self.main_menu_header(default_header)
                 if not cpath_header:
                     return None
-                widget_type = self.get_widget_type(result["cpath_type"])
-                if not widget_type:
-                    return None
-                if "Stacked" in cpath_type:
-                    cpath_label = "%s | Stacked (%s) | Category" % (
-                        cpath_header,
-                        widget_type,
-                    )
-                else:
-                    cpath_label = "%s | %s" % (cpath_header, widget_type)
-                self.update_cpath_in_database(
-                    cpath_setting,
-                    cpath_path,
-                    cpath_header,
-                    result["cpath_type"],
-                    cpath_label,
-                )
-            if context == "main_menu":
-                cpath_header = self.main_menu_header(default_header)
-                if not cpath_header or cpath_header.strip() == "":
-                    cpath_map = {
-                        "movie.main_menu": xbmc.getLocalizedString(342),
-                        "tvshow.main_menu": xbmc.getLocalizedString(20343),
-                        "custom1.main_menu": "Custom 1",
-                        "custom2.main_menu": "Custom 2",
-                        "custom3.main_menu": "Custom 3",
-                    }
-                    cpath_header = cpath_map.get(
-                        cpath_setting, "Default main menu label not found"
-                    )
-                self.update_cpath_in_database(
-                    cpath_setting, cpath_path, cpath_header, "", ""
-                )
+                self.add_cpath_to_database(cpath_setting, cpath_path, cpath_header, "", "")
                 self.make_main_menu_xml(self.fetch_current_cpaths())
-        elif action == "display_type":
-            result = self.fetch_one_cpath(cpath_setting)
-            if not result:
-                return None
-            cpath_path = result.get("cpath_path", None)
-            cpath_header = result.get("cpath_header", None)
-            cpath_label = result.get("cpath_label", None)
-            if not cpath_path:
-                return None
-            self.create_and_update_widget(
-                cpath_setting, cpath_path, cpath_header, add_to_db=False
-            )
-        elif action == "clear_path":
-            self.remove_cpath_from_database(cpath_setting)
-            if context == "main_menu":
-                self.make_default_xml()
-                dialog.ok("FENtastic", "Path cleared")
-        return None
+                dialog.ok("FENtastic", "Main menu remade")
+
+
+    def handle_rename_path(self, cpath_setting, context):
+        """Handles the renaming of a custom path."""
+        result = self.fetch_one_cpath(cpath_setting)
+
+        if not result:
+            return None
+
+        cpath_path = result.get("cpath_path", None)
+        cpath_type = result.get("cpath_type", None)
+        cpath_label = result.get("cpath_label", None)
+        if not cpath_path:
+            return None
+
+        default_header = result.get("cpath_header", None)
+
+        if context == "widget":
+            self.update_widget_rename(result, default_header, cpath_type, cpath_setting)
+        elif context == "main_menu":
+            self.update_main_menu_rename(cpath_setting, cpath_path, default_header)
+
+
+    def update_widget_rename(self, result, default_header,cpath_type, cpath_setting):
+        """Updates the widget name and database entry for the specified setting."""
+        cpath_header = self.widget_header(default_header)
+        if not cpath_header:
+            return None
+
+        widget_type = self.get_widget_type(result["cpath_type"])
+        if not widget_type:
+            return None
+
+        if "Stacked" in cpath_type:
+            cpath_label = f"{cpath_header} | Stacked ({widget_type}) | Category"
+        else:
+            cpath_label = f"{cpath_header} | {widget_type}"
+
+        self.update_cpath_in_database(cpath_setting, result["cpath_path"], cpath_header, result["cpath_type"],
+                                          cpath_label)
+
+
+    def update_main_menu_rename(self, cpath_setting, cpath_path, default_header):
+        """Handles renaming the main menu item."""
+        cpath_header = self.main_menu_header(default_header)
+        if not cpath_header or cpath_header.strip() == "":
+            cpath_map = {
+                "movie.main_menu": xbmc.getLocalizedString(342),
+                "tvshow.main_menu": xbmc.getLocalizedString(20343),
+                "custom1.main_menu": "Custom 1",
+                "custom2.main_menu": "Custom 2",
+                "custom3.main_menu": "Custom 3",
+            }
+            cpath_header = cpath_map.get(cpath_setting, "Default main menu label not found")
+
+        self.update_cpath_in_database(cpath_setting, cpath_path, cpath_header, "", "")
+        self.make_main_menu_xml(self.fetch_current_cpaths())
+
+
+    def handle_display_type(self, cpath_setting):
+        """Handles displaying the widget type for a given path."""
+        result = self.fetch_one_cpath(cpath_setting)
+        if not result:
+            return None
+
+        cpath_path = result.get("cpath_path", None)
+        cpath_header = result.get("cpath_header", None)
+        cpath_label = result.get("cpath_label", None)
+
+        if cpath_path:
+            self.create_and_update_widget(cpath_setting, cpath_path, cpath_header, add_to_db=False)
+
+
+    def handle_clear_path(self, cpath_setting, context):
+        """Handles clearing a custom path from the database."""
+        self.remove_cpath_from_database(cpath_setting)
+        if context == "main_menu":
+            self.make_default_xml()
+            dialog.ok("FENtastic", "Path cleared")
+
 
     def swap_widgets(self, parts, current_order, new_order):
         current_widget = f"{parts[0]}.{parts[1]}.{current_order}"
