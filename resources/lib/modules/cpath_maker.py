@@ -13,59 +13,26 @@ max_widgets = 10
 settings_path = xbmcvfs.translatePath("special://profile/addon_data/script.fentastic.helper/")
 database_path = xbmcvfs.translatePath("special://profile/addon_data/script.fentastic.helper/cpath_cache.db")
 
-(
-    movies_widgets_xml,
-    tvshows_widgets_xml,
-    custom1_widgets_xml,
-    custom2_widgets_xml,
-    custom3_widgets_xml,
-) = (
-    "script-fentastic-widget_movies",
-    "script-fentastic-widget_tvshows",
-    "script-fentastic-widget_custom1",
-    "script-fentastic-widget_custom2",
-    "script-fentastic-widget_custom3",
-)
-(
-    movies_main_menu_xml,
-    tvshows_main_menu_xml,
-    custom1_main_menu_xml,
-    custom2_main_menu_xml,
-    custom3_main_menu_xml,
-) = (
-    "script-fentastic-main_menu_movies",
-    "script-fentastic-main_menu_tvshows",
-    "script-fentastic-main_menu_custom1",
-    "script-fentastic-main_menu_custom2",
-    "script-fentastic-main_menu_custom3",
-)
+# Use a dictionary for XML file names
+media_types_xml = {
+    "movie": {"widget": "script-fentastic-widget_movies", "main_menu": "script-fentastic-main_menu_movies"},
+    "tvshow": {"widget": "script-fentastic-widget_tvshows", "main_menu": "script-fentastic-main_menu_tvshows"},
+    "custom1": {"widget": "script-fentastic-widget_custom1", "main_menu": "script-fentastic-main_menu_custom1"},
+    "custom2": {"widget": "script-fentastic-widget_custom2", "main_menu": "script-fentastic-main_menu_custom2"},
+    "custom3": {"widget": "script-fentastic-widget_custom3", "main_menu": "script-fentastic-main_menu_custom3"},
+}
+
 default_xmls = {
-    "movie.widget": (movies_widgets_xml, xmls.default_widget, "MovieWidgets"),
-    "tvshow.widget": (tvshows_widgets_xml, xmls.default_widget, "TVShowWidgets"),
-    "custom1.widget": (custom1_widgets_xml, xmls.default_widget, "Custom1Widgets"),
-    "custom2.widget": (custom2_widgets_xml, xmls.default_widget, "Custom2Widgets"),
-    "custom3.widget": (custom3_widgets_xml, xmls.default_widget, "Custom3Widgets"),
-    "movie.main_menu": (movies_main_menu_xml, xmls.default_main_menu, "MoviesMainMenu"),
-    "tvshow.main_menu": (
-        tvshows_main_menu_xml,
-        xmls.default_main_menu,
-        "TVShowsMainMenu",
-    ),
-    "custom1.main_menu": (
-        custom1_main_menu_xml,
-        xmls.default_main_menu,
-        "Custom1MainMenu",
-    ),
-    "custom2.main_menu": (
-        custom2_main_menu_xml,
-        xmls.default_main_menu,
-        "Custom2MainMenu",
-    ),
-    "custom3.main_menu": (
-        custom3_main_menu_xml,
-        xmls.default_main_menu,
-        "Custom3MainMenu",
-    ),
+    "movie.widget": ("script-fentastic-widget_movies", xmls.default_widget, "MovieWidgets"),
+    "tvshow.widget": ("script-fentastic-widget_tvshows", xmls.default_widget, "TVShowWidgets"),
+    "custom1.widget": ("script-fentastic-widget_custom1", xmls.default_widget, "Custom1Widgets"),
+    "custom2.widget": ("script-fentastic-widget_custom2", xmls.default_widget, "Custom2Widgets"),
+    "custom3.widget": ("script-fentastic-widget_custom3", xmls.default_widget, "Custom3Widgets"),
+    "movie.main_menu": ("script-fentastic-main_menu_movies", xmls.default_main_menu, "MoviesMainMenu"),
+    "tvshow.main_menu": ("script-fentastic-main_menu_tvshows", xmls.default_main_menu, "TVShowsMainMenu"),
+    "custom1.main_menu": ("script-fentastic-main_menu_custom1", xmls.default_main_menu, "Custom1MainMenu"),
+    "custom2.main_menu": ("script-fentastic-main_menu_custom2", xmls.default_main_menu, "Custom2MainMenu"),
+    "custom3.main_menu": ("script-fentastic-main_menu_custom3", xmls.default_main_menu, "Custom3MainMenu"),
 }
 
 main_include_dict = {
@@ -85,6 +52,16 @@ widget_types = {
     "BigLandscapeInfo": "WidgetListBigEpisodes",
     "Category": "WidgetListCategory",
 }
+
+# Define a dictionary for widget types and their corresponding IDs
+media_type_id = {
+    "movie": 19010,
+    "tvshow": 22010,
+    "custom1": 23010,
+    "custom2": 24010,
+    "custom3": 25010,
+}
+
 default_path = "addons://sources/video"
 
 
@@ -235,41 +212,19 @@ class CPaths:
             return
         if not active_cpaths:
             self.make_default_xml()
-        media_types = {
-            "movie": (
-                movies_main_menu_xml,
-                xmls.main_menu_movies_xml,
-                "movie.main_menu",
-            ),
-            "tvshow": (
-                tvshows_main_menu_xml,
-                xmls.main_menu_tvshows_xml,
-                "tvshow.main_menu",
-            ),
-            "custom1": (
-                custom1_main_menu_xml,
-                xmls.main_menu_custom1_xml,
-                "custom1.main_menu",
-            ),
-            "custom2": (
-                custom2_main_menu_xml,
-                xmls.main_menu_custom2_xml,
-                "custom2.main_menu",
-            ),
-            "custom3": (
-                custom3_main_menu_xml,
-                xmls.main_menu_custom3_xml,
-                "custom3.main_menu",
-            ),
-        }
-        media_values = media_types.get(self.media_type)
-        if media_values:
-            menu_xml_file, main_menu_xml, key = media_values
-        xml_file = "special://skin/xml/%s.xml" % (menu_xml_file)
-        final_format = main_menu_xml.format(
-            main_menu_path=active_cpaths[key]["cpath_path"],
-            cpath_header=active_cpaths[key].get("cpath_header", ""),
-        )
+
+        media_values = media_types_xml.get(self.media_type, {})
+        menu_xml_file = media_values.get("widget")
+        main_menu_xml = media_values.get("main_menu")
+
+        if menu_xml_file and main_menu_xml:
+            xml_file = f"special://skin/xml/{menu_xml_file}.xml"
+            key = f"{self.media_type}.main_menu"
+            final_format = main_menu_xml.format(
+                main_menu_path=active_cpaths[key]["cpath_path"],
+                cpath_header=active_cpaths[key].get("cpath_header", ""),
+            )
+
         if not "&amp;" in final_format:
             final_format = final_format.replace("&", "&amp;")
 
@@ -284,22 +239,7 @@ class CPaths:
             return
         if not active_cpaths:
             self.make_default_xml()
-        media_type_to_xml = {
-            "movie": movies_widgets_xml,
-            "tvshow": tvshows_widgets_xml,
-            "custom1": custom1_widgets_xml,
-            "custom2": custom2_widgets_xml,
-            "custom3": custom3_widgets_xml,
-        }
-        xml_filename = media_type_to_xml.get(self.media_type)
-        xml_file = "special://skin/xml/%s.xml" % xml_filename
-        media_type_id = {
-            "movie": 19010,
-            "tvshow": 22010,
-            "custom1": 23010,
-            "custom2": 24010,
-            "custom3": 25010,
-        }
+        xml_file = "special://skin/xml/%s.xml" % media_types_xml[self.media_type]["widget"]
 
         list_id = media_type_id.get(self.media_type)
         final_format = xmls.media_xml_start.format(main_include=self.main_include)
@@ -759,22 +699,10 @@ def get_jsonrpc(request):
 
 
 def remake_all_cpaths(silent=False):
-    for item in (
-        "movie.widget",
-        "tvshow.widget",
-        "custom1.widget",
-        "custom2.widget",
-        "custom3.widget",
-    ):
-        CPaths(item).remake_widgets()
-    for item in (
-        "movie.main_menu",
-        "tvshow.main_menu",
-        "custom1.main_menu",
-        "custom2.main_menu",
-        "custom3.main_menu",
-    ):
-        CPaths(item).remake_main_menus()
+    for widget in media_type_id.keys():
+        CPaths(f"{widget}.widget").remake_widgets()
+        CPaths(f"{widget}.main_menu").remake_main_menus()
+
     if not silent:
         xbmcgui.Dialog().ok("FENtastic", "Menus and widgets remade")
 
@@ -782,48 +710,33 @@ def remake_all_cpaths(silent=False):
 def starting_widgets():
     window = xbmcgui.Window(10000)
     window.setProperty("fentastic.starting_widgets", "finished")
-    for item in (
-        "movie.widget",
-        "tvshow.widget",
-        "custom1.widget",
-        "custom2.widget",
-        "custom3.widget",
-    ):
+
+    for widget in media_type_id.keys():
         try:
-            active_cpaths = CPaths(item).fetch_current_cpaths()
+            active_cpaths = CPaths(f"{widget}.widget").fetch_current_cpaths()
             if not active_cpaths:
                 continue
-            widget_type = item.split(".")[0]
-            widget_type_id = {
-                "movie": 19010,
-                "tvshow": 22010,
-                "custom1": 23010,
-                "custom2": 24010,
-                "custom3": 25010
-            }
-            base_list_id = widget_type_id.get(widget_type)
+
+            base_list_id = media_type_id[widget]
             for count in range(1, 11):
-                active_widget = active_cpaths.get(count, {})
-                if not active_widget:
-                    continue
-                if not "Stacked" in active_widget["cpath_label"]:
-                    continue
-                cpath_setting = active_widget["cpath_setting"]
-                if not cpath_setting:
-                    continue
-                try:
-                    list_id = base_list_id + int(cpath_setting.split(".")[2])
-                except:
-                    continue
-                try:
-                    first_item = files_get_directory(active_widget["cpath_path"])[0]
-                except:
-                    continue
-                if not first_item:
-                    continue
-                cpath_label, cpath_path = first_item["label"], first_item["file"]
-                window.setProperty("fentastic.%s.label" % list_id, cpath_label)
-                window.setProperty("fentastic.%s.path" % list_id, cpath_path)
+                active_widget = active_cpaths.get(count)
+                if active_widget and "Stacked" in active_widget.get("cpath_label", ""):
+                    cpath_setting = active_widget.get("cpath_setting")
+                    if not cpath_setting:
+                        continue
+                    try:
+                        list_id = base_list_id + int(cpath_setting.split(".")[2])
+                    except:
+                        continue
+                    try:
+                        first_item = files_get_directory(active_widget["cpath_path"])[0]
+                    except:
+                        continue
+
+                    if first_item:
+                        cpath_label, cpath_path = first_item.get("label"), first_item.get("file")
+                        window.setProperty(f"fentastic.{list_id}.label", cpath_label)
+                        window.setProperty(f"fentastic.{list_id}.path", cpath_path)
         except:
             pass
     try:
