@@ -212,19 +212,43 @@ class CPaths:
             return
         if not active_cpaths:
             self.make_default_xml()
+        media_types = {
+            "movie": (
+                "script-fentastic-main_menu_movies",
+                xmls.main_menu_movies_xml,
+                "movie.main_menu",
+            ),
+            "tvshow": (
+                "script-fentastic-main_menu_tvshows",
+                xmls.main_menu_tvshows_xml,
+                "tvshow.main_menu",
+            ),
+            "custom1": (
+                "script-fentastic-main_menu_custom1",
+                xmls.main_menu_custom1_xml,
+                "custom1.main_menu",
+            ),
+            "custom2": (
+                "script-fentastic-main_menu_custom2",
+                xmls.main_menu_custom2_xml,
+                "custom2.main_menu",
+            ),
+            "custom3": (
+                "script-fentastic-main_menu_custom3",
+                xmls.main_menu_custom3_xml,
+                "custom3.main_menu",
+            ),
+        }
+        media_values = media_types.get(self.media_type)
+        if media_values:
+            menu_xml_file, main_menu_xml, key = media_values
+        xml_file = "special://skin/xml/%s.xml" % (menu_xml_file)
+        xbmc.log( f"menu_xml_file: {menu_xml_file}, main_menu_xml: {main_menu_xml}, key: {key}", 1)
 
-        media_values = media_types_xml.get(self.media_type, {})
-        menu_xml_file = media_values.get("widget")
-        main_menu_xml = media_values.get("main_menu")
-
-        if menu_xml_file and main_menu_xml:
-            xml_file = f"special://skin/xml/{menu_xml_file}.xml"
-            key = f"{self.media_type}.main_menu"
-            final_format = main_menu_xml.format(
-                main_menu_path=active_cpaths[key]["cpath_path"],
-                cpath_header=active_cpaths[key].get("cpath_header", ""),
-            )
-
+        final_format = main_menu_xml.format(
+            main_menu_path=active_cpaths[key]["cpath_path"],
+            cpath_header=active_cpaths[key].get("cpath_header", ""),
+        )
         if not "&amp;" in final_format:
             final_format = final_format.replace("&", "&amp;")
 
@@ -328,7 +352,7 @@ class CPaths:
             if not self.manage_action_and_check(cpath_setting, "widget"):
                 return self.manage_widgets()
         else:
-            cpath_setting = "%s.%s" % (self.cpath_setting, active_cpath_check)
+            cpath_setting = f"{self.cpath_setting}.{active_cpath_check}"
         if not self.handle_path_browser_results(cpath_setting, "widget"):
             return self.manage_widgets()
         return self.manage_widgets()
@@ -354,7 +378,7 @@ class CPaths:
         choice = dialog.select(label, keys)
         if choice == -1:
             return None
-        return keys[choice]
+        return keys[choice], widget_types[keys[choice]]
 
     def update_skin_strings(self):
         movie_cpath = self.fetch_one_cpath("movie.main_menu")
