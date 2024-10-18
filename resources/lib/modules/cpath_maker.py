@@ -4,20 +4,16 @@ import json
 import sqlite3 as database
 from threading import Thread
 from modules import xmls
-
-# from modules.logger import logger
+import re
 
 dialog = xbmcgui.Dialog()
 window = xbmcgui.Window(10000)
 Listitem = xbmcgui.ListItem
 max_widgets = 10
 
-settings_path = xbmcvfs.translatePath(
-    "special://profile/addon_data/script.fentastic.helper/"
-)
-database_path = xbmcvfs.translatePath(
-    "special://profile/addon_data/script.fentastic.helper/cpath_cache.db"
-)
+settings_path = xbmcvfs.translatePath("special://profile/addon_data/script.fentastic.helper/")
+database_path = xbmcvfs.translatePath("special://profile/addon_data/script.fentastic.helper/cpath_cache.db")
+
 (
     movies_widgets_xml,
     tvshows_widgets_xml,
@@ -72,6 +68,7 @@ default_xmls = {
         "Custom3MainMenu",
     ),
 }
+
 main_include_dict = {
     "movie": {"main_menu": None, "widget": "MovieWidgets"},
     "tvshow": {"main_menu": None, "widget": "TVShowWidgets"},
@@ -93,109 +90,125 @@ default_path = "addons://sources/video"
 
 class CPaths:
     def __init__(self, cpath_setting):
-        self.connect_database()
+        """
+        Initialize CPaths object with specific cpath setting, media type, and path type.
+        """
         self.cpath_setting = cpath_setting
-        self.cpath_lookup = "'%s'" % (self.cpath_setting + "%")
+        self.cpath_lookup = f"{self.cpath_setting}%"
         self.media_type, self.path_type = self.cpath_setting.split(".")
         self.main_include = main_include_dict[self.media_type][self.path_type]
-        self.refresh_cpaths, self.last_cpath = False, None
+        self.refresh_cpaths = False
+        self.last_cpath = None
+        self.dbcon = None
+        self.dbcur = None
+        self.connect_database()
 
     def connect_database(self):
+        """
+        Establish a connection to the database and create the table if it doesn't exist.
+        Uses instance-level variables for dbcon and dbcur to avoid global variables.
+        """
         if not xbmcvfs.exists(settings_path):
             xbmcvfs.mkdir(settings_path)
-        self.dbcon = database.connect(database_path, timeout=20)
-        self.dbcon.execute(
-            "CREATE TABLE IF NOT EXISTS custom_paths (cpath_setting text unique, cpath_path text, cpath_header text, cpath_type text, cpath_label text)"
-        )
-        self.dbcur = self.dbcon.cursor()
 
-    def add_cpath_to_database(
-        self, cpath_setting, cpath_path, cpath_header, cpath_type, cpath_label
-    ):
-        self.refresh_cpaths = True
-        self.dbcur.execute(
-            "INSERT OR REPLACE INTO custom_paths VALUES (?, ?, ?, ?, ?)",
-            (cpath_setting, cpath_path, cpath_header, cpath_type, cpath_label),
-        )
-        self.dbcon.commit()
+        if not self.dbcon:
+            self.dbcon = database.connect(database_path, timeout=20)
+            self.dbcon.execute("""
+                CREATE TABLE IF NOT EXISTS custom_paths (
+                    cpath_setting TEXT UNIQUE, 
+                    cpath_path TEXT, 
+                    cpath_header TEXT, 
+                    cpath_type TEXT, 
+                    cpath_label TEXT)
+                """)
+            self.dbcur = self.dbcon.cursor()
 
-    def update_cpath_in_database(
-        self, cpath_setting, cpath_path, cpath_header, cpath_type, cpath_label
-    ):
+    def add_cpath_to_database(self, cpath_setting, cpath_path, cpath_header, cpath_type, cpath_label):
+        """
+        Add or replace a cpath in the custom_paths table. Marks that cpaths need refreshing.
+        """
         self.refresh_cpaths = True
-        self.dbcur.execute(
-            """
-            UPDATE custom_paths
-            SET cpath_path = ?, cpath_header = ?, cpath_type = ?, cpath_label = ?
-            WHERE cpath_setting = ?
-        """,
-            (cpath_path, cpath_header, cpath_type, cpath_label, cpath_setting),
-        )
-        self.dbcon.commit()
+        with self.dbcon:  # Use context manager to ensure commit happens correctly
+            self.dbcur.execute("""
+                INSERT OR REPLACE INTO custom_paths VALUES (?, ?, ?, ?, ?)
+            """, (cpath_setting, cpath_path, cpath_header, cpath_type, cpath_label))
+
+    def update_cpath_in_database(self, cpath_setting, cpath_path, cpath_header, cpath_type, cpath_label):
+        """
+        Update an existing cpath in the custom_paths table. Marks that cpaths need refreshing.
+        """
+        self.refresh_cpaths = True
+        with self.dbcon:
+            self.dbcur.execute("""
+                UPDATE custom_paths
+                SET cpath_path = ?, cpath_header = ?, cpath_type = ?, cpath_label = ?
+                WHERE cpath_setting = ?
+            """, (cpath_path, cpath_header, cpath_type, cpath_label, cpath_setting))
 
     def remove_cpath_from_database(self, cpath_setting):
+        """
+        Remove a cpath from the custom_paths table based on the cpath_setting.
+        """
         self.refresh_cpaths = True
-        self.dbcur.execute(
-            "DELETE FROM custom_paths WHERE cpath_setting = ?", (cpath_setting,)
-        )
-        self.dbcon.commit()
+        with self.dbcon:
+            self.dbcur.execute("DELETE FROM custom_paths WHERE cpath_setting = ?", (cpath_setting,))
 
     def fetch_current_cpaths(self):
-        results = self.dbcur.execute(
-            "SELECT * FROM custom_paths WHERE cpath_setting LIKE %s" % self.cpath_lookup
-        ).fetchall()
-        try:
-            results.sort(key=lambda k: int(k[0].split(".")[-1]))
-        except:
-            pass
+        """
+        Fetch all cpaths matching the lookup pattern from the database.
+        Results are sorted by the number at the end of cpath_setting.
+        """
+        results = self.dbcur.execute("""
+            SELECT * FROM custom_paths WHERE cpath_setting LIKE ? 
+            ORDER BY CAST(SUBSTR(cpath_setting, INSTR(cpath_setting, '.') + 1) AS INTEGER)
+        """, (self.cpath_lookup,)).fetchall()
+
         current_dict = {}
         for item in results:
             try:
                 key = int(item[0].split(".")[-1])
-            except:
+            except ValueError:
                 key = item[0]
-            data = {
+            current_dict[key] = {
                 "cpath_setting": item[0],
                 "cpath_path": item[1],
                 "cpath_header": item[2],
                 "cpath_type": item[3],
-                "cpath_label": item[4],
+                "cpath_label": item[4]
             }
-            current_dict[key] = data
         return current_dict
 
     def fetch_one_cpath(self, cpath_setting):
-        result = self.dbcur.execute(
-            "SELECT * FROM custom_paths WHERE cpath_setting = ?", (cpath_setting,)
-        ).fetchone()
-        if result is None:
-            return None
-        return {
+        """
+        Fetch a single cpath from the database based on the cpath_setting.
+        """
+        result = self.dbcur.execute("SELECT * FROM custom_paths WHERE cpath_setting = ?", (cpath_setting,)).fetchone()
+        return None if result is None else {
             "cpath_setting": result[0],
             "cpath_path": result[1],
             "cpath_header": result[2],
             "cpath_type": result[3],
-            "cpath_label": result[4],
+            "cpath_label": result[4]
         }
 
     def path_browser(self, label="", file=default_path, thumbnail=""):
+        """
+        Browse files and set a selected path.
+        """
         show_busy_dialog()
         label = self.clean_header(label)
         results = files_get_directory(file)
         hide_busy_dialog()
+
         list_items = []
+
+        # Optimize the creation of the default path list item
         if file != default_path:
-            listitem = Listitem(
-                "Use [COLOR dodgerblue]%s[/COLOR] as path" % label,
-                "Set as path",
-                offscreen=True,
-            )
+            listitem = Listitem(f"Use [COLOR dodgerblue]{label}[/COLOR] as path", "Set as path", offscreen=True)
             listitem.setArt({"icon": thumbnail})
-            listitem.setProperty(
-                "item",
-                json.dumps({"label": label, "file": file, "thumbnail": thumbnail}),
-            )
+            listitem.setProperty("item", json.dumps({"label": label, "file": file, "thumbnail": thumbnail}))
             list_items.append(listitem)
+
         for i in results:
             stripped_label = i["label"]
             stripped_label = stripped_label.replace("[B]", "").replace("[/B]", "")
@@ -208,25 +221,19 @@ class CPaths:
                 "%s »" % stripped_label, "Browse path...", offscreen=True
             )
             listitem.setArt({"icon": i["thumbnail"]})
-            listitem.setProperty(
-                "item",
-                json.dumps(
-                    {
-                        "label": i["label"],
-                        "file": i["file"],
-                        "thumbnail": i["thumbnail"],
-                    }
-                ),
-            )
+            listitem.setProperty("item",
+                                 json.dumps({"label": i["label"], "file": i["file"], "thumbnail": i["thumbnail"]}))
             list_items.append(listitem)
+
         choice = dialog.select("Choose path", list_items, useDetails=True)
+
         if choice == -1:
             return {}
+
+        # Load choice from selected item
         choice = json.loads(list_items[choice].getProperty("item"))
-        if choice["file"] == file:
-            return choice
-        else:
-            return self.path_browser(**choice)
+
+        return choice if choice["file"] == file else self.path_browser(**choice)
 
     def make_main_menu_xml(self, active_cpaths):
         if not self.refresh_cpaths:
@@ -270,10 +277,14 @@ class CPaths:
         )
         if not "&amp;" in final_format:
             final_format = final_format.replace("&", "&amp;")
+
         self.write_xml(xml_file, final_format)
         self.update_skin_strings()
 
     def make_widget_xml(self, active_cpaths):
+        """
+        Generates an XML widget file based on active content paths.
+        """
         if not self.refresh_cpaths:
             return
         if not active_cpaths:
@@ -294,6 +305,7 @@ class CPaths:
             "custom2": 24010,
             "custom3": 25010,
         }
+
         list_id = media_type_id.get(self.media_type)
         final_format = xmls.media_xml_start.format(main_include=self.main_include)
         for k, v in active_cpaths.items():
@@ -317,6 +329,7 @@ class CPaths:
             )
             if not "&amp;" in body:
                 final_format += body.replace("&", "&amp;")
+
         final_format += xmls.media_xml_end
         self.write_xml(xml_file, final_format)
 
@@ -358,9 +371,7 @@ class CPaths:
 
     def manage_main_menu_path(self):
         active_cpaths = self.fetch_current_cpaths()
-        if active_cpaths and not self.manage_action_and_check(
-            self.cpath_setting, "main_menu"
-        ):
+        if active_cpaths and not self.manage_action_and_check(self.cpath_setting, "main_menu"):
             return
         if not self.handle_path_browser_results(self.cpath_setting, "main_menu"):
             return self.make_main_menu_xml(active_cpaths)
@@ -369,10 +380,10 @@ class CPaths:
     def manage_widgets(self):
         active_cpaths = self.fetch_current_cpaths()
         widget_choices = [
-            "Widget %s : %s"
-            % (count, active_cpaths.get(count, {}).get("cpath_label", ""))
+            f"Widget {count} : {active_cpaths.get(count, {}).get('cpath_label', '')}"
             for count in range(1, 11)
         ]
+
         choice = dialog.select("Choose widget", widget_choices)
         if choice == -1:
             return self.make_widget_xml(active_cpaths)
@@ -417,52 +428,36 @@ class CPaths:
         custom3_cpath = self.fetch_one_cpath("custom3.main_menu")
         movie_cpath_header = movie_cpath.get("cpath_header") if movie_cpath else None
         tvshow_cpath_header = tvshow_cpath.get("cpath_header") if tvshow_cpath else None
-        custom1_cpath_header = (
-            custom1_cpath.get("cpath_header") if custom1_cpath else None
-        )
-        custom2_cpath_header = (
-            custom2_cpath.get("cpath_header") if custom2_cpath else None
-        )
-        custom3_cpath_header = (
-            custom3_cpath.get("cpath_header") if custom3_cpath else None
-        )
+        custom1_cpath_header = custom1_cpath.get("cpath_header") if custom1_cpath else None
+        custom2_cpath_header = custom2_cpath.get("cpath_header") if custom2_cpath else None
+        custom3_cpath_header = custom3_cpath.get("cpath_header") if custom3_cpath else None
         default_movie_string_id = 342
         default_tvshow_string_id = 20343
         default_custom1_string = "Custom 1"
         default_custom2_string = "Custom 2"
         default_custom3_string = "Custom 3"
-        default_movie_value = (
-            xbmc.getLocalizedString(default_movie_string_id)
-            if not movie_cpath_header
-            else movie_cpath_header
-        )
-        default_tvshow_value = (
-            xbmc.getLocalizedString(default_tvshow_string_id)
-            if not tvshow_cpath_header
-            else tvshow_cpath_header
-        )
-        default_custom1_value = (
-            default_custom1_string if not custom1_cpath_header else custom1_cpath_header
-        )
-        default_custom2_value = (
-            default_custom2_string if not custom2_cpath_header else custom2_cpath_header
-        )
-        default_custom3_value = (
-            default_custom3_string if not custom3_cpath_header else custom3_cpath_header
-        )
+        default_movie_value = xbmc.getLocalizedString(default_movie_string_id) if not movie_cpath_header else movie_cpath_header
+        default_tvshow_value = xbmc.getLocalizedString(default_tvshow_string_id) if not tvshow_cpath_header else tvshow_cpath_header
+        default_custom1_value = default_custom1_string if not custom1_cpath_header else custom1_cpath_header
+        default_custom2_value = default_custom2_string if not custom2_cpath_header else custom2_cpath_header
+        default_custom3_value = default_custom3_string if not custom3_cpath_header else custom3_cpath_header
         xbmc.executebuiltin("Skin.SetString(MenuMovieLabel,%s)" % default_movie_value)
         xbmc.executebuiltin("Skin.SetString(MenuTVShowLabel,%s)" % default_tvshow_value)
-        xbmc.executebuiltin(
-            "Skin.SetString(MenuCustom1Label,%s)" % default_custom1_value
-        )
-        xbmc.executebuiltin(
-            "Skin.SetString(MenuCustom2Label,%s)" % default_custom2_value
-        )
-        xbmc.executebuiltin(
-            "Skin.SetString(MenuCustom3Label,%s)" % default_custom3_value
-        )
+        xbmc.executebuiltin("Skin.SetString(MenuCustom1Label,%s)" % default_custom1_value)
+        xbmc.executebuiltin("Skin.SetString(MenuCustom2Label,%s)" % default_custom2_value)
+        xbmc.executebuiltin("Skin.SetString(MenuCustom3Label,%s)" % default_custom3_value)
 
     def manage_action(self, cpath_setting, context="widget"):
+        """
+        Manages actions related to the custom path settings based on the provided context.
+
+        Parameters:
+        - cpath_setting: The current custom path setting to manage.
+        - context: The context in which the action is being performed (default is 'widget').
+
+        Returns:
+        - None if action is cancelled, otherwise it performs the chosen action.
+        """
         choices = [
             ("Rename", "rename_path"),
             ("Remake", "remake_path"),
@@ -470,17 +465,18 @@ class CPaths:
         ]
         if context == "widget":
             choices = [
-                ("Move up", "move_up"),
-                ("Move down", "move_down"),
-                ("Display type", "display_type"),
-            ] + choices
-        choice = dialog.select(
-            "%s options" % self.path_type.capitalize().replace("_", " "),
-            [i[0] for i in choices],
-        )
+                          ("Move up", "move_up"),
+                          ("Move down", "move_down"),
+                          ("Display type", "display_type"),
+                      ] + choices
+
+        choice = dialog.select(f"{self.path_type.capitalize().replace('_', ' ')} options", [i[0] for i in choices])
+
         if choice == -1:
             return None
+
         action = choices[choice][1]
+
         if action in ["move_up", "move_down"]:
             parts = cpath_setting.split(".")
             current_order = int(parts[-1])
@@ -584,86 +580,130 @@ class CPaths:
         current_widget = f"{parts[0]}.{parts[1]}.{current_order}"
         adjacent_widget = f"{parts[0]}.{parts[1]}.{new_order}"
         self.refresh_cpaths = True
-        self.dbcur.execute(
-            "UPDATE custom_paths SET cpath_setting = ? WHERE cpath_setting = ?",
-            (f"{parts[0]}.{parts[1]}.temp", current_widget),
-        )
-        self.dbcur.execute(
-            "UPDATE custom_paths SET cpath_setting = ? WHERE cpath_setting = ?",
-            (current_widget, adjacent_widget),
-        )
-        self.dbcur.execute(
-            "UPDATE custom_paths SET cpath_setting = ? WHERE cpath_setting = ?",
-            (adjacent_widget, f"{parts[0]}.{parts[1]}.temp"),
-        )
-        self.dbcon.commit()
+        with self.dbcon:
+            self.dbcur.execute(
+                "UPDATE custom_paths SET cpath_setting = ? WHERE cpath_setting = ?",
+                (f"{parts[0]}.{parts[1]}.temp", current_widget),)
+            self.dbcur.execute(
+                "UPDATE custom_paths SET cpath_setting = ? WHERE cpath_setting = ?",
+                (current_widget, adjacent_widget),)
+            self.dbcur.execute(
+                "UPDATE custom_paths SET cpath_setting = ? WHERE cpath_setting = ?",
+                (adjacent_widget, f"{parts[0]}.{parts[1]}.temp"),)
 
     def handle_widget_remake(self, result, cpath_setting):
         cpath_path, default_header = result.get("file", None), result.get("label", None)
         cpath_header = self.widget_header(default_header)
         self.create_and_update_widget(cpath_setting, cpath_path, cpath_header)
 
-    def create_and_update_widget(
-        self, cpath_setting, cpath_path, cpath_header, add_to_db=True
-    ):
+    def create_and_update_widget(self, cpath_setting, cpath_path, cpath_header, add_to_db=True):
+        """
+        Creates and updates a widget in the database.
+
+        Parameters:
+        - cpath_setting: The current custom path setting to update.
+        - cpath_path: The file path for the widget.
+        - cpath_header: The header for the widget.
+        - add_to_db: Boolean flag indicating whether to add to the database or update an existing entry.
+
+        Returns:
+        - None
+        """
         widget_type = self.widget_type()
+
+        # Handle stacked widget case
         if widget_type[0] == "Category" and dialog.yesno(
-            "Stacked widget",
-            "Make [COLOR accent_color][B]%s[/B][/COLOR] a stacked widget?"
-            % cpath_header,
+                "Stacked widget",
+                f"Make [COLOR accent_color][B]{cpath_header}[/B][/COLOR] a stacked widget?"
         ):
             widget_type = self.widget_type(label="Choose stacked widget display type")
-            cpath_type, cpath_label = "%sStacked" % widget_type[
-                1
-            ], "%s | Stacked (%s) | Category" % (cpath_header, widget_type[0])
+            cpath_type = f"{widget_type[1]}Stacked"
+            cpath_label = f"{cpath_header} | Stacked ({widget_type[0]}) | Category"
         else:
-            cpath_type, cpath_label = widget_type[1], "%s | %s" % (
-                cpath_header,
-                widget_type[0],
-            )
+            cpath_type, cpath_label = widget_type[1], f"{cpath_header} | {widget_type[0]}"
+
+        # Add or update the widget in the database
         if add_to_db:
-            self.add_cpath_to_database(
-                cpath_setting, cpath_path, cpath_header, cpath_type, cpath_label
-            )
+            self.add_cpath_to_database(cpath_setting, cpath_path, cpath_header, cpath_type, cpath_label)
         else:
-            self.update_cpath_in_database(
-                cpath_setting, cpath_path, cpath_header, cpath_type, cpath_label
-            )
+            self.update_cpath_in_database(cpath_setting, cpath_path, cpath_header, cpath_type, cpath_label)
 
     def reload_skin(self):
+        """
+        Reloads the skin after clearing the refresh flag. Ensures that the widget is refreshed properly.
+
+        Returns:
+        - None
+        """
         if window.getProperty("fentastic.clear_path_refresh") == "true":
             return
+
         window.setProperty("fentastic.clear_path_refresh", "true")
+
+        # Wait until the user interface (UI) is no longer locked
         while xbmcgui.getCurrentWindowId() == 10035:
             xbmc.sleep(500)
+
         window.setProperty("fentastic.clear_path_refresh", "")
         xbmc.sleep(200)
         xbmc.executebuiltin("ReloadSkin()")
         starting_widgets()
 
     def clean_header(self, header):
+        """
+        Cleans the given header string by removing unnecessary formatting tags.
+
+        Parameters:
+        - header: (str) The header string to clean.
+
+        Returns:
+        - (str) The cleaned header string.
+        """
         return header.replace("[B]", "").replace("[/B]", "").replace(" >>", "")
 
     def remake_main_menus(self):
+        """
+        Remakes the main menu XML files based on the current custom paths.
+        If no active custom paths are found, the default XML will be created.
+
+        Returns:
+        - None
+        """
         self.refresh_cpaths = True
         active_cpaths = self.fetch_current_cpaths()
+
         if active_cpaths:
             self.make_main_menu_xml(active_cpaths)
         else:
             self.make_default_xml()
 
     def remake_widgets(self):
+        """
+        Remakes the widgets based on the current custom paths.
+        If no active custom paths are found, the default XML will be created.
+
+        Returns:
+        - None
+        """
         self.refresh_cpaths = True
         active_cpaths = self.fetch_current_cpaths()
+
         if active_cpaths:
             self.make_widget_xml(active_cpaths)
         else:
             self.make_default_xml()
 
     def make_default_xml(self):
+        """
+        Creates a default XML file for the current custom path setting.
+        The XML is written to the appropriate location and skin strings are updated.
+
+        Returns:
+        - None
+        """
         item = default_xmls[self.cpath_setting]
         final_format = item[1].format(includes_type=item[2])
-        xml_file = "special://skin/xml/%s.xml" % item[0]
+        xml_file = f"special://skin/xml/{item[0]}.xml"
         with xbmcvfs.File(xml_file, "w") as f:
             f.write(final_format)
         self.update_skin_strings()
@@ -735,7 +775,7 @@ def starting_widgets():
                 "tvshow": 22010,
                 "custom1": 23010,
                 "custom2": 24010,
-                "custom3": 25010,
+                "custom3": 25010
             }
             base_list_id = widget_type_id.get(widget_type)
             for count in range(1, 11):
